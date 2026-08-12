@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = PROJECT_ROOT / ".env"
 
 Issue = dict[str, Any]
+_SCHEMA_READY = False
 
 
 def _load_dotenv() -> None:
@@ -251,9 +252,21 @@ def ensure_schema() -> None:
             connection.close()
 
 
+def _ensure_schema_ready() -> None:
+    """Create the schema once per process before the first write/read."""
+
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+
+    ensure_schema()
+    _SCHEMA_READY = True
+
+
 def save_run_results(score_result: dict[str, Any], total_rows: int) -> int:
     """Insert a validation run and return the new run_id."""
 
+    _ensure_schema_ready()
     mysql_connector = _get_mysql_connector()
     connection = _connect(include_database=True)
     cursor = None
@@ -301,6 +314,7 @@ def save_issues(run_id: int, issues: list[Issue]) -> int:
     if not issues:
         return 0
 
+    _ensure_schema_ready()
     mysql_connector = _get_mysql_connector()
     connection = _connect(include_database=True)
     cursor = None
@@ -351,6 +365,7 @@ def get_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
     except (TypeError, ValueError) as exc:
         raise ValueError("limit must be an integer value.") from exc
 
+    _ensure_schema_ready()
     mysql_connector = _get_mysql_connector()
     connection = _connect(include_database=True)
     cursor = None

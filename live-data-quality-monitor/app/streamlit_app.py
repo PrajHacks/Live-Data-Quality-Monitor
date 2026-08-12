@@ -791,28 +791,16 @@ def render_email_section(analysis: dict[str, Any] | None) -> None:
     with st.expander("Email this report", expanded=False):
         with st.container(border=True):
             st.write("Send both report formats to a stakeholder from the current analysis.")
-            analysis_ready = bool(analysis)
-            email_configured = is_email_configured()
-            if not email_configured:
-                st.info(
-                    "Email delivery is disabled on this deployment until SMTP secrets are added to Streamlit secrets."
-                )
             recipient_email = st.text_input(
                 "Recipient email",
                 key="recipient_email_input",
                 placeholder="name@example.com",
             )
 
-            if not analysis_ready:
-                st.info("Run an analysis first so there is a report to send.")
-
-            email_ready = analysis_ready and email_configured
-
             send_clicked = st.button(
                 "Send Report",
                 key="send_report_button",
                 use_container_width=True,
-                disabled=not email_ready,
                 icon="\u2709\ufe0f",
                 type="primary",
             )
@@ -878,12 +866,6 @@ def render_recent_runs_panel(limit: int = 10) -> None:
         st.caption(
             "Historical validation runs stored in MySQL. Timestamps include seconds."
         )
-
-        if not is_mysql_configured():
-            st.info(
-                "Recent Runs is disabled on this deployment until MySQL secrets are added to Streamlit secrets."
-            )
-            return
 
         try:
             recent_runs = get_recent_runs(limit=limit)
@@ -1014,34 +996,26 @@ def main() -> None:
                     analysis = build_analysis(df, status=status)
                     status.write("Running data quality checks... complete")
 
-                    if is_mysql_configured():
-                        status.update(label="Saving results to database...", state="running", expanded=True)
-                        status.write("Saving results to database...")
-                        try:
-                            if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
-                                run_id = st.session_state.get("last_saved_run_id")
-                            else:
-                                run_id = save_analysis_to_database(
-                                    analysis["score_result"],
-                                    analysis["issues"],
-                                    len(df),
-                                )
-                                st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
-                                st.session_state["last_saved_run_id"] = run_id
-                            analysis["db_message"] = f"Saved to database (Run ID: {run_id})"
-                            analysis["db_message_level"] = "success"
-                            status.write(f"Saving results to database... complete (Run ID: {run_id})")
-                        except RuntimeError as exc:
-                            analysis["db_message"] = f"Database save failed: {exc}"
-                            analysis["db_message_level"] = "warning"
-                            status.write(f"Saving results to database... failed ({exc})")
-                    else:
-                        analysis["db_message"] = (
-                            "Database persistence is disabled on this deployment because MySQL secrets are not configured."
-                        )
-                        analysis["db_message_level"] = "info"
-                        status.update(label="Skipping database save...", state="complete", expanded=True)
-                        status.write(analysis["db_message"])
+                    status.update(label="Saving results to database...", state="running", expanded=True)
+                    status.write("Saving results to database...")
+                    try:
+                        if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
+                            run_id = st.session_state.get("last_saved_run_id")
+                        else:
+                            run_id = save_analysis_to_database(
+                                analysis["score_result"],
+                                analysis["issues"],
+                                len(df),
+                            )
+                            st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
+                            st.session_state["last_saved_run_id"] = run_id
+                        analysis["db_message"] = f"Saved to database (Run ID: {run_id})"
+                        analysis["db_message_level"] = "success"
+                        status.write(f"Saving results to database... complete (Run ID: {run_id})")
+                    except RuntimeError as exc:
+                        analysis["db_message"] = f"Database save failed: {exc}"
+                        analysis["db_message_level"] = "warning"
+                        status.write(f"Saving results to database... failed ({exc})")
 
                     status.update(label="Analysis complete", state="complete", expanded=False)
                 st.caption(
