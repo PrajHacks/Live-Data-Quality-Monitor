@@ -136,6 +136,9 @@ def _load_db_config(include_database: bool = True) -> dict[str, Any]:
         "connection_timeout": 10,
     }
 
+    if host not in {"localhost", "127.0.0.1", "::1"}:
+        config["ssl_disabled"] = False
+
     if include_database:
         config["database"] = database
 
@@ -165,8 +168,46 @@ def _connect(include_database: bool = True):
         raise RuntimeError(
             f"Could not connect to MySQL {db_name!r} at "
             f"{config['host']}:{config['port']}. "
-            "Make sure the server is running and the credentials in .env are correct."
+            "Make sure the server is reachable, the credentials are correct, and "
+            "SSL/TLS is allowed by the MySQL service if you are using a hosted database."
         ) from exc
+
+
+def _create_validation_tables(cursor) -> None:
+    """Create the validation history tables on an existing database connection."""
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runs (
+            run_id INT AUTO_INCREMENT PRIMARY KEY,
+            run_timestamp DATETIME NOT NULL,
+            total_rows INT NOT NULL,
+            completeness FLOAT NOT NULL,
+            validity FLOAT NOT NULL,
+            uniqueness FLOAT NOT NULL,
+            consistency FLOAT NOT NULL,
+            overall_score FLOAT NOT NULL,
+            status VARCHAR(20) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS issues (
+            issue_id INT AUTO_INCREMENT PRIMARY KEY,
+            run_id INT NOT NULL,
+            column_name VARCHAR(255) NOT NULL,
+            issue_type VARCHAR(100) NOT NULL,
+            issue_count INT NOT NULL,
+            severity VARCHAR(20) NOT NULL,
+            details TEXT,
+            CONSTRAINT fk_issues_runs
+                FOREIGN KEY (run_id) REFERENCES runs(run_id)
+                ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """
+    )
 
 
 def ensure_schema() -> None:
@@ -206,39 +247,7 @@ def ensure_schema() -> None:
     try:
         connection = _connect(include_database=True)
         cursor = connection.cursor()
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS runs (
-                run_id INT AUTO_INCREMENT PRIMARY KEY,
-                run_timestamp DATETIME NOT NULL,
-                total_rows INT NOT NULL,
-                completeness FLOAT NOT NULL,
-                validity FLOAT NOT NULL,
-                uniqueness FLOAT NOT NULL,
-                consistency FLOAT NOT NULL,
-                overall_score FLOAT NOT NULL,
-                status VARCHAR(20) NOT NULL
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS issues (
-                issue_id INT AUTO_INCREMENT PRIMARY KEY,
-                run_id INT NOT NULL,
-                column_name VARCHAR(255) NOT NULL,
-                issue_type VARCHAR(100) NOT NULL,
-                issue_count INT NOT NULL,
-                severity VARCHAR(20) NOT NULL,
-                details TEXT,
-                CONSTRAINT fk_issues_runs
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id)
-                    ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """
-        )
+        _create_validation_tables(cursor)
 
         connection.commit()
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
@@ -259,7 +268,24 @@ def _ensure_schema_ready() -> None:
     if _SCHEMA_READY:
         return
 
-    ensure_schema()
+    mysql_connector = _get_mysql_connector()
+    connection = _connect(include_database=True)
+    cursor = None
+
+    try:
+        cursor = connection.cursor()
+        _create_validation_tables(cursor)
+        connection.commit()
+    except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        raise RuntimeError(
+            "Failed to prepare validation tables in MySQL."
+        ) from exc
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
     _SCHEMA_READY = True
 
 
