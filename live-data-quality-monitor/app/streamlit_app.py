@@ -979,70 +979,76 @@ def main() -> None:
     if analyze_clicked:
         st.session_state.pop("analysis", None)
         status = None
+        analysis_error = None
         try:
             if source_mode == "Upload CSV" and uploaded_file is None:
-                st.warning("Please upload a CSV file before clicking Analyze.")
-                return
+                analysis_error = "Please upload a CSV file before clicking Analyze."
+                st.warning(analysis_error)
+            else:
+                status_label = (
+                    "Fetching live product data from Open Food Facts..."
+                    if source_mode == "Fetch Live Data"
+                    else "Loading uploaded CSV..."
+                )
 
-            status_label = (
-                "Fetching live product data from Open Food Facts..."
-                if source_mode == "Fetch Live Data"
-                else "Loading uploaded CSV..."
-            )
+                with st.status(status_label, expanded=True) as status:
+                    if source_mode == "Fetch Live Data":
+                        status.write(
+                            "This can take 30-60 seconds depending on the live API response time - thanks for your patience!"
+                        )
+                        status.write("Fetching live product data from Open Food Facts...")
+                        df = fetch_live_dataframe()
+                        status.write("Fetching live product data from Open Food Facts... complete")
+                        if len(df) < TARGET_ROWS:
+                            st.warning(
+                                f"The live fetch returned {len(df)} rows, which is fewer than the "
+                                f"target of {TARGET_ROWS}."
+                            )
+                    else:
+                        status.write("Loading uploaded CSV...")
+                        df = load_csv_from_upload(uploaded_file)
+                        status.write("Loading uploaded CSV... complete")
 
-            with st.status(status_label, expanded=True) as status:
-                status.write(
+                    status.update(label="Running data quality checks...", state="running", expanded=True)
+                    status.write("Running data quality checks...")
+                    analysis = build_analysis(df, status=status)
+                    status.write("Running data quality checks... complete")
+
+                    if is_mysql_configured():
+                        status.update(label="Saving results to database...", state="running", expanded=True)
+                        status.write("Saving results to database...")
+                        try:
+                            if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
+                                run_id = st.session_state.get("last_saved_run_id")
+                            else:
+                                run_id = save_analysis_to_database(
+                                    analysis["score_result"],
+                                    analysis["issues"],
+                                    len(df),
+                                )
+                                st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
+                                st.session_state["last_saved_run_id"] = run_id
+                            analysis["db_message"] = f"Saved to database (Run ID: {run_id})"
+                            analysis["db_message_level"] = "success"
+                            status.write(f"Saving results to database... complete (Run ID: {run_id})")
+                        except RuntimeError as exc:
+                            analysis["db_message"] = f"Database save failed: {exc}"
+                            analysis["db_message_level"] = "warning"
+                            status.write(f"Saving results to database... failed ({exc})")
+                    else:
+                        analysis["db_message"] = (
+                            "Database persistence is disabled on this deployment because MySQL secrets are not configured."
+                        )
+                        analysis["db_message_level"] = "info"
+                        status.update(label="Skipping database save...", state="complete", expanded=True)
+                        status.write(analysis["db_message"])
+
+                    status.update(label="Analysis complete", state="complete", expanded=False)
+                st.caption(
                     "This can take 30-60 seconds depending on the live API response time - thanks for your patience!"
                 )
-                if source_mode == "Fetch Live Data":
-                    status.write("Fetching live product data from Open Food Facts...")
-                    df = fetch_live_dataframe()
-                    status.write("Fetching live product data from Open Food Facts... complete")
-                    if len(df) < TARGET_ROWS:
-                        st.warning(
-                            f"The live fetch returned {len(df)} rows, which is fewer than the "
-                            f"target of {TARGET_ROWS}."
-                        )
-                else:
-                    status.write("Loading uploaded CSV...")
-                    df = load_csv_from_upload(uploaded_file)
-                    status.write("Loading uploaded CSV... complete")
-
-                analysis = build_analysis(df, status=status)
-
-                if is_mysql_configured():
-                    status.update(label="Saving results to database...", state="running", expanded=True)
-                    status.write("Saving results to database...")
-                    try:
-                        if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
-                            run_id = st.session_state.get("last_saved_run_id")
-                        else:
-                            run_id = save_analysis_to_database(
-                                analysis["score_result"],
-                                analysis["issues"],
-                                len(df),
-                            )
-                            st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
-                            st.session_state["last_saved_run_id"] = run_id
-                        analysis["db_message"] = f"Saved to database (Run ID: {run_id})"
-                        analysis["db_message_level"] = "success"
-                        status.write(f"Saving results to database... complete (Run ID: {run_id})")
-                    except RuntimeError as exc:
-                        analysis["db_message"] = f"Database save failed: {exc}"
-                        analysis["db_message_level"] = "warning"
-                        status.write(f"Saving results to database... failed ({exc})")
-                else:
-                    analysis["db_message"] = (
-                        "Database persistence is disabled on this deployment because MySQL secrets are not configured."
-                    )
-                    analysis["db_message_level"] = "info"
-                    status.update(label="Skipping database save...", state="complete", expanded=True)
-                    status.write(analysis["db_message"])
-
-                status.update(label="Analysis complete", state="complete", expanded=False)
-            st.session_state.analysis = analysis
-
-            st.success("Analysis complete.")
+                st.session_state.analysis = analysis
+                st.success("Analysis complete.")
         except Exception as exc:
             if status is not None:
                 status.update(label="Analysis failed", state="error", expanded=True)
