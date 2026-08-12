@@ -1,0 +1,50 @@
+{
+  "_comment": "The 0-100 limits for sugars, fat, and salt work because these are grams per 100g and cannot exceed 100g in a 100g serving. The 0-3800 energy ceiling is a broad sanity check for very energy-dense foods and helps catch obviously bad values without being too strict.",
+  "required_columns": [
+    "code",
+    "product_name",
+    "brands",
+    "categories",
+    "countries",
+    "nutrition_grade_fr",
+    "energy_100g",
+    "sugars_100g",
+    "fat_100g",
+    "salt_100g"
+  ],
+  "critical_columns": [
+    "code",
+    "product_name"
+  ],
+  "ranges": {
+    "energy_100g": {
+      "min": 0,
+      "max": 3800
+    },
+    "sugars_100g": {
+      "min": 0,
+      "max": 100
+    },
+    "fat_100g": {
+      "min": 0,
+      "max": 100
+    },
+    "salt_100g": {
+      "min": 0,
+      "max": 100
+    }
+  },
+  "allowed_nutrition_grades": [
+    "a",
+    "b",
+    "c",
+    "d",
+    "e"
+  ],
+  "score_bands": {
+    "Excellent": 90,
+    "Warning": 75,
+    "Failed": 0
+  },
+  "quality_threshold": 90
+}

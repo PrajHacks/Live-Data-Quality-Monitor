@@ -1,0 +1,8 @@
+pandas
+requests
+openpyxl
+mysql-connector-python
+python-dotenv
+streamlit
+plotly
+reportlab
