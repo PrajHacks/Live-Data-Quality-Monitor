@@ -803,7 +803,6 @@ def render_email_section(analysis: dict[str, Any] | None) -> None:
 
     with st.expander("Email this report", expanded=False):
         with st.container(border=True):
-            st.write("Send both report formats to a stakeholder from the current analysis.")
             recipient_email = st.text_input(
                 "Recipient email",
                 key="recipient_email_input",
