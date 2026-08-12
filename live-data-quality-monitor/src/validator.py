@@ -208,12 +208,6 @@ def print_summary(issues: list[Issue]) -> None:
 def print_quality_report(report: dict[str, Any], total_rows: int) -> None:
     """Print the weighted quality score report."""
 
-    status_symbol = {
-        "Excellent": "\u2705",
-        "Warning": "\u26a0\ufe0f",
-        "Failed": "\u274c",
-    }.get(report["status"], "")
-
     print("\nDATA QUALITY REPORT")
     print("\u2500" * 32)
     print(f"{'Rows analyzed:':<20}{total_rows:>8}")
@@ -223,7 +217,7 @@ def print_quality_report(report: dict[str, Any], total_rows: int) -> None:
     print(f"{'Consistency:':<20}{report['consistency']:>7.1f}%")
     print("\u2500" * 32)
     print(f"{'Overall Score:':<20}{report['overall_score']:>7.1f}%")
-    print(f"{'Status:':<20}{status_symbol} {report['status']}")
+    print(f"{'Status:':<20}{report['status']}")
 
 
 def main() -> list[Issue]:

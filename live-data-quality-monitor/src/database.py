@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ ENV_PATH = PROJECT_ROOT / ".env"
 
 Issue = dict[str, Any]
 _SCHEMA_READY = False
+logger = logging.getLogger(__name__)
 
 
 def _load_dotenv() -> None:
@@ -164,6 +166,7 @@ def _connect(include_database: bool = True):
     try:
         return mysql_connector.connect(**config)
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("MySQL connection failed.")
         db_name = config.get("database", "(server)")
         raise RuntimeError(
             f"Could not connect to MySQL {db_name!r} at "
@@ -232,6 +235,7 @@ def ensure_schema() -> None:
         )
         connection.commit()
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("Failed to create or access the MySQL database.")
         raise RuntimeError(
             "Failed to create or access the MySQL database. "
             "Check that the server is running and the credentials in .env are valid."
@@ -251,6 +255,7 @@ def ensure_schema() -> None:
 
         connection.commit()
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("Failed to create validation tables in MySQL.")
         raise RuntimeError(
             "Failed to create validation tables in MySQL."
         ) from exc
@@ -326,6 +331,7 @@ def save_run_results(score_result: dict[str, Any], total_rows: int) -> int:
         connection.commit()
         return int(cursor.lastrowid)
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("Failed to save validation run to MySQL.")
         raise RuntimeError("Failed to save the validation run to MySQL.") from exc
     finally:
         if cursor is not None:
@@ -375,6 +381,7 @@ def save_issues(run_id: int, issues: list[Issue]) -> int:
         connection.commit()
         return cursor.rowcount
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("Failed to save validation issues to MySQL.")
         raise RuntimeError("Failed to save validation issues to MySQL.") from exc
     finally:
         if cursor is not None:
@@ -410,6 +417,7 @@ def get_recent_runs(limit: int = 10) -> list[dict[str, Any]]:
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
     except mysql_connector.Error as exc:  # type: ignore[attr-defined]
+        logger.exception("Failed to load recent validation runs from MySQL.")
         raise RuntimeError("Failed to load recent validation runs from MySQL.") from exc
     finally:
         if cursor is not None:

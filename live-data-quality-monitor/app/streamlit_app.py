@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape as html_escape
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ send_report_email = email_sender_module.send_report_email
 get_recent_runs = database_module.get_recent_runs
 save_issues = database_module.save_issues
 save_run_results = database_module.save_run_results
+logger = logging.getLogger(__name__)
 
 
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -67,16 +69,11 @@ SEVERITY_COLORS = {
     "Warning": "#F0AD4E",
     "Info": "#5B9BD5",
 }
-STATUS_EMOJIS = {
-    "Excellent": "\u2705",
-    "Warning": "\u26A0\ufe0f",
-    "Failed": "\U0001F534",
-}
 METRICS = [
-    ("\U0001F4CB", "Completeness", "completeness", "Missing values across the dataset"),
-    ("\u2705", "Validity", "validity", "Range and value checks"),
-    ("\U0001F511", "Uniqueness", "uniqueness", "Duplicate detection"),
-    ("\U0001F4CA", "Consistency", "consistency", "Outlier detection"),
+    ("C", "Completeness", "completeness", "Missing values across the dataset"),
+    ("V", "Validity", "validity", "Range and value checks"),
+    ("U", "Uniqueness", "uniqueness", "Duplicate detection"),
+    ("S", "Consistency", "consistency", "Outlier detection"),
 ]
 
 ABOUT_TEXT = (
@@ -228,7 +225,17 @@ def inject_custom_styles() -> None:
                 box-shadow: 0 14px 26px rgba(2, 6, 23, 0.18);
             }}
             .metric-icon {{
-                font-size: 1.35rem;
+                width: 2rem;
+                height: 2rem;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 999px;
+                font-size: 0.85rem;
+                font-weight: 900;
+                letter-spacing: 0.08em;
+                color: #0F172A;
+                background: linear-gradient(135deg, rgba(45, 212, 191, 0.95), rgba(56, 189, 248, 0.95));
                 line-height: 1;
                 margin-bottom: 0.6rem;
             }}
@@ -389,11 +396,7 @@ def status_badge_html(status: Any) -> str:
     label = str(status).strip() or "Unknown"
     label_key = normalize_status_label(label, default="Info")
     css_class = status_class(label_key)
-    emoji = STATUS_EMOJIS.get(label_key, "•")
-    return (
-        f'<span class="run-status-badge run-status-{css_class}">'
-        f"{html_escape(emoji)} {html_escape(label_key)}</span>"
-    )
+    return f'<span class="run-status-badge run-status-{css_class}">{html_escape(label_key)}</span>'
 
 
 def humanize_number(value: Any, digits: int = 1, suffix: str = "%") -> str:
@@ -444,10 +447,7 @@ def render_overall_score(score_result: dict[str, Any]) -> None:
         <div class="score-card">
             <div class="score-label">Overall Quality Score</div>
             <div class="score-value" style="color: {style["text"]};">{overall_score:.1f}%</div>
-            <div class="score-pill {css_class}">
-                {html_escape(STATUS_EMOJIS.get(status, "•"))}
-                {html_escape(status)}
-            </div>
+            <div class="score-pill {css_class}">{html_escape(status)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -575,12 +575,25 @@ def build_analysis(df: pd.DataFrame, status: Any | None = None) -> dict[str, Any
     }
 
 
-def save_analysis_to_database(score_result: dict[str, Any], issues: list[dict[str, Any]], total_rows: int) -> int:
+def save_analysis_to_database(
+    score_result: dict[str, Any],
+    issues: list[dict[str, Any]],
+    total_rows: int,
+) -> tuple[int | None, str, str]:
     """Persist one analysis run and its issues to MySQL."""
 
-    run_id = save_run_results(score_result, total_rows)
-    save_issues(run_id, issues)
-    return run_id
+    try:
+        run_id = save_run_results(score_result, total_rows)
+        save_issues(run_id, issues)
+        return run_id, f"Saved to database (Run ID: {run_id})", "success"
+    except RuntimeError as exc:
+        logger.exception("MySQL persistence failed for the current analysis run.")
+        return (
+            None,
+            "Database persistence isn't available in this environment right now. "
+            "You can still use the reports above, and recent runs may be unavailable.",
+            "info",
+        )
 
 
 def issue_dataframe(issues: list[dict[str, Any]]) -> pd.DataFrame:
@@ -771,7 +784,7 @@ def render_downloads(excel_path: Path, excel_bytes: bytes, pdf_path: Path, pdf_b
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key="download_excel_report",
-                icon="\U0001F4C4",
+                icon="\U0001F4CA",
             )
         with pdf_col:
             st.download_button(
@@ -781,7 +794,7 @@ def render_downloads(excel_path: Path, excel_bytes: bytes, pdf_path: Path, pdf_b
                 mime="application/pdf",
                 use_container_width=True,
                 key="download_pdf_report",
-                icon="\U0001F4D1",
+                icon="\U0001F4C4",
             )
 
 
@@ -801,13 +814,13 @@ def render_email_section(analysis: dict[str, Any] | None) -> None:
                 "Send Report",
                 key="send_report_button",
                 use_container_width=True,
-                icon="\u2709\ufe0f",
+                icon="\U0001F4E7",
                 type="primary",
             )
 
             if send_clicked and analysis:
                 if not recipient_email.strip():
-                    st.warning("Please enter a recipient email address.")
+                    st.info("Please enter a recipient email address.")
                     return
 
                 result = send_report_email(
@@ -820,7 +833,7 @@ def render_email_section(analysis: dict[str, Any] | None) -> None:
                 if result.get("success"):
                     st.success(result["message"])
                 else:
-                    st.error(result["message"])
+                    st.info(result["message"])
 
 
 def render_about_section() -> None:
@@ -839,9 +852,7 @@ def format_recent_runs_table(recent_runs: list[dict[str, Any]]) -> pd.DataFrame:
         )
 
     frame["run_timestamp"] = pd.to_datetime(frame["run_timestamp"], errors="coerce")
-    frame["status"] = frame["status"].map(
-        lambda value: f"{STATUS_EMOJIS.get(str(value), '•')} {value}"
-    )
+    frame["status"] = frame["status"].map(lambda value: str(value))
     frame["overall_score"] = pd.to_numeric(frame["overall_score"], errors="coerce")
     frame["run_timestamp"] = frame["run_timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -870,7 +881,10 @@ def render_recent_runs_panel(limit: int = 10) -> None:
         try:
             recent_runs = get_recent_runs(limit=limit)
         except RuntimeError as exc:
-            st.error(f"Unable to load recent runs: {exc}")
+            logger.exception("Failed to load recent runs from MySQL.")
+            st.info(
+                "Recent runs are temporarily unavailable in this environment right now."
+            )
             return
 
         if not recent_runs:
@@ -919,7 +933,7 @@ def main() -> None:
 
     st.set_page_config(
         page_title="Live Data Quality Monitor",
-        page_icon="\U0001F4CA",
+        page_icon="DQ",
         layout="wide",
         initial_sidebar_state="expanded",
     )
@@ -998,24 +1012,25 @@ def main() -> None:
 
                     status.update(label="Saving results to database...", state="running", expanded=True)
                     status.write("Saving results to database...")
-                    try:
-                        if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
-                            run_id = st.session_state.get("last_saved_run_id")
-                        else:
-                            run_id = save_analysis_to_database(
-                                analysis["score_result"],
-                                analysis["issues"],
-                                len(df),
-                            )
-                            st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
-                            st.session_state["last_saved_run_id"] = run_id
+                    if st.session_state.get("last_saved_analysis_token") == analysis["analysis_token"]:
+                        run_id = st.session_state.get("last_saved_run_id")
                         analysis["db_message"] = f"Saved to database (Run ID: {run_id})"
                         analysis["db_message_level"] = "success"
+                    else:
+                        run_id, db_message, db_message_level = save_analysis_to_database(
+                            analysis["score_result"],
+                            analysis["issues"],
+                            len(df),
+                        )
+                        analysis["db_message"] = db_message
+                        analysis["db_message_level"] = db_message_level
+                        if run_id is not None:
+                            st.session_state["last_saved_analysis_token"] = analysis["analysis_token"]
+                            st.session_state["last_saved_run_id"] = run_id
+                    if run_id is not None:
                         status.write(f"Saving results to database... complete (Run ID: {run_id})")
-                    except RuntimeError as exc:
-                        analysis["db_message"] = f"Database save failed: {exc}"
-                        analysis["db_message_level"] = "warning"
-                        status.write(f"Saving results to database... failed ({exc})")
+                    else:
+                        status.write("Saving results to database... unavailable")
 
                     status.update(label="Analysis complete", state="complete", expanded=False)
                 st.caption(
@@ -1055,10 +1070,8 @@ def main() -> None:
             message_level = analysis.get("db_message_level", "success")
             if message_level == "success":
                 st.success(db_message)
-            elif message_level == "info":
-                st.info(db_message)
             else:
-                st.warning(db_message)
+                st.info(db_message)
         st.caption(f"Last analyzed: {analysis['last_analyzed']}")
         render_email_section(analysis)
     else:

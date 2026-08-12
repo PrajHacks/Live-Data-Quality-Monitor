@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import mimetypes
+import logging
 import os
 import smtplib
 import ssl
@@ -15,6 +16,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = PROJECT_ROOT / ".env"
 
 Issue = dict[str, Any]
+logger = logging.getLogger(__name__)
+UNAVAILABLE_MESSAGE = (
+    "Email delivery isn't configured in this environment right now. "
+    "You can still download the Excel and PDF reports above."
+)
 
 
 def _load_dotenv() -> None:
@@ -147,8 +153,8 @@ def _build_subject(score_result: dict[str, Any]) -> str:
     status = str(score_result.get("status", "Warning"))
     overall_score = float(score_result.get("overall_score", 0.0))
     if status == "Excellent":
-        return f"\u2705 Data Quality Report \u2014 {status}"
-    return f"\u26A0\ufe0f Data Quality Alert \u2014 {status}, Score: {overall_score:.1f}%"
+        return f"Data Quality Report \u2014 {status}"
+    return f"Data Quality Alert \u2014 {status}, Score: {overall_score:.1f}%"
 
 
 def _build_body(
@@ -286,14 +292,17 @@ def send_report_email(
             "subject": message["Subject"],
         }
     except ValueError as exc:
+        logger.info("Email delivery was not sent because the recipient address was invalid.")
         return {"success": False, "message": str(exc)}
     except smtplib.SMTPAuthenticationError as exc:
+        logger.exception("SMTP authentication failed while sending the report email.")
         return {
             "success": False,
-            "message": (
-                "Email delivery failed: Service is not available right now because of a temporary issue. "
-                "Please try again later."
-            ),
+            "message": UNAVAILABLE_MESSAGE,
         }
     except (FileNotFoundError, RuntimeError, smtplib.SMTPException, OSError) as exc:
-        return {"success": False, "message": f"Email delivery failed: {exc}"}
+        logger.exception("Email delivery failed while preparing or sending the report.")
+        return {"success": False, "message": UNAVAILABLE_MESSAGE}
+    except Exception as exc:
+        logger.exception("Unexpected email delivery failure.")
+        return {"success": False, "message": UNAVAILABLE_MESSAGE}
