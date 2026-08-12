@@ -27,6 +27,53 @@ def _load_dotenv() -> None:
     load_dotenv(ENV_PATH)
 
 
+def _load_secret_values() -> dict[str, str]:
+    """Read MySQL settings from Streamlit secrets when available."""
+
+    try:
+        import streamlit as st  # type: ignore
+    except ImportError:
+        return {}
+
+    try:
+        secrets = st.secrets
+    except Exception:
+        return {}
+
+    values: dict[str, str] = {}
+    direct_keys = ("MYSQL_HOST", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE", "MYSQL_PORT")
+    for key in direct_keys:
+        try:
+            value = secrets[key]
+        except Exception:
+            value = None
+        if value:
+            values[key] = str(value).strip()
+
+    try:
+        mysql_block = secrets.get("mysql", {})
+    except Exception:
+        mysql_block = {}
+
+    if isinstance(mysql_block, dict):
+        mapping = {
+            "MYSQL_HOST": ("host", "mysql_host"),
+            "MYSQL_USER": ("user", "mysql_user"),
+            "MYSQL_PASSWORD": ("password", "mysql_password"),
+            "MYSQL_DATABASE": ("database", "mysql_database"),
+            "MYSQL_PORT": ("port", "mysql_port"),
+        }
+        for env_key, candidates in mapping.items():
+            if env_key in values:
+                continue
+            for candidate in candidates:
+                if candidate in mysql_block and mysql_block[candidate]:
+                    values[env_key] = str(mysql_block[candidate]).strip()
+                    break
+
+    return values
+
+
 def _get_mysql_connector():
     """Import mysql.connector lazily so the module stays importable offline."""
 
@@ -51,6 +98,14 @@ def _load_db_config(include_database: bool = True) -> dict[str, Any]:
     password = os.getenv("MYSQL_PASSWORD", "")
     database = os.getenv("MYSQL_DATABASE", "").strip()
     port_text = os.getenv("MYSQL_PORT", "3306").strip()
+
+    secret_values = _load_secret_values()
+    if secret_values:
+        host = secret_values.get("MYSQL_HOST", host)
+        user = secret_values.get("MYSQL_USER", user)
+        password = secret_values.get("MYSQL_PASSWORD", password)
+        database = secret_values.get("MYSQL_DATABASE", database)
+        port_text = secret_values.get("MYSQL_PORT", port_text)
 
     missing = [
         name
@@ -84,6 +139,16 @@ def _load_db_config(include_database: bool = True) -> dict[str, Any]:
         config["database"] = database
 
     return config
+
+
+def is_mysql_configured() -> bool:
+    """Return True when the MySQL connection settings are available."""
+
+    try:
+        _load_db_config(include_database=True)
+    except RuntimeError:
+        return False
+    return True
 
 
 def _connect(include_database: bool = True):

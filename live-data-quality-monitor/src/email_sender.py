@@ -108,6 +108,16 @@ def _load_email_settings() -> dict[str, Any]:
     return settings
 
 
+def is_email_configured() -> bool:
+    """Return True when the email credentials are available."""
+
+    try:
+        _load_email_settings()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _validate_recipient_email(recipient_email: str) -> str:
     """Perform a light sanity check on the destination email address."""
 
