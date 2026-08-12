@@ -18,7 +18,7 @@ ENV_PATH = PROJECT_ROOT / ".env"
 Issue = dict[str, Any]
 logger = logging.getLogger(__name__)
 UNAVAILABLE_MESSAGE = (
-    "Email delivery isn't available in this environment right now. "
+    "Email delivery isn't available in this environment right now because of a temporary issue. "
     "You can still download the Excel and PDF reports above."
 )
 
