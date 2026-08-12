@@ -23,16 +23,16 @@ from scripts.fetch_live_data import (  # noqa: E402
     fetch_products,
     save_outputs,
 )
-from src.email_sender import is_email_configured, send_report_email  # noqa: E402
-from src.database import (  # noqa: E402
-    get_recent_runs,
-    is_mysql_configured,
-    save_issues,
-    save_run_results,
-)
+import src.email_sender as email_sender_module  # noqa: E402
+import src.database as database_module  # noqa: E402
 from src.pdf_report_generator import generate_pdf_report  # noqa: E402
 from src.report_generator import generate_excel_report  # noqa: E402
 from src.validator import load_rules, validate_dataframe  # noqa: E402
+
+send_report_email = email_sender_module.send_report_email
+get_recent_runs = database_module.get_recent_runs
+save_issues = database_module.save_issues
+save_run_results = database_module.save_run_results
 
 
 REPORTS_DIR = PROJECT_ROOT / "reports"
@@ -89,6 +89,30 @@ ABOUT_TEXT = (
     "that ingests data from multiple sources and needs to trust it before "
     "using it for decisions."
 )
+
+
+def is_email_configured() -> bool:
+    """Return True when the email helper exposes a working configuration check."""
+
+    checker = getattr(email_sender_module, "is_email_configured", None)
+    if callable(checker):
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+    return False
+
+
+def is_mysql_configured() -> bool:
+    """Return True when the database helper exposes a working configuration check."""
+
+    checker = getattr(database_module, "is_mysql_configured", None)
+    if callable(checker):
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+    return False
 
 
 def inject_custom_styles() -> None:
