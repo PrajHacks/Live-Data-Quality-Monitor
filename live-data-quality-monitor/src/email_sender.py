@@ -291,11 +291,8 @@ def send_report_email(
         return {
             "success": False,
             "message": (
-                "Email delivery failed: Gmail rejected the login. "
-                "Double-check that EMAIL_ADDRESS is the exact Gmail account that "
-                "generated the app password, and that EMAIL_PASSWORD is the 16-character "
-                "Google App Password pasted without spaces or quotes. "
-                f"Server said: {exc}"
+                "Email delivery failed: Service is not available right now because of a temporary issue. "
+                "Please try again later."
             ),
         }
     except (FileNotFoundError, RuntimeError, smtplib.SMTPException, OSError) as exc:
